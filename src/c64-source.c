@@ -1984,7 +1984,7 @@ void c64_update(void *data, obs_data_t *settings)
     // sync for the properties dropdown, then rebuild this source's own LUT
     // from its settings (id + per-source colour overrides) — C64STR-014.
     const char *palette_id = obs_data_get_string(settings, "palette");
-    if (palette_id && palette_id[0]) {
+    if (palette_id && palette_id[0] && strcmp(palette_id, C64_DEVICE_PALETTE_ID) != 0) {
         const char *current_palette = c64_palette_get_active_id();
         if (!current_palette || strcmp(current_palette, palette_id) != 0) {
             c64_palette_select(palette_id);
