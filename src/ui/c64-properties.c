@@ -3345,7 +3345,10 @@ static bool palette_changed(void *priv, obs_properties_t *props, obs_property_t 
     const bool follow_device = strcmp(palette_id, C64_DEVICE_PALETTE_ID) == 0;
 
     // Update tooltip with palette description
-    const char *desc = follow_device ? "Use the runtime VIC palette reported by the Ultimate."
+    const bool unsupported = context &&
+                             os_atomic_load_long(&context->device_palette_status) == C64_DEVICE_PALETTE_UNSUPPORTED;
+    const char *desc = follow_device ? obs_module_text(unsupported ? "PaletteFollowDevice.Unsupported"
+                                                                   : "PaletteFollowDevice.Description")
                                      : c64_palette_get_description(palette_id);
     if (desc && property) {
         obs_property_set_long_description(property, desc);

@@ -166,10 +166,12 @@ TEST(device_palette_is_requested_only_for_video)
     ctx.stream_control_transport = C64_STREAM_TRANSPORT_AUTO;
     ctx.rest_client = kDummyClient;
     ctx.follow_device_palette = true;
+    ctx.device_palette_request_supported = true;
     g_rest.start_ok = true;
 
     assert(c64_stream_control_to(&ctx, "1.2.3.4", 64, true, 0, "dest"));
     assert(g_rest.last_start_palette);
+    assert(ctx.device_palette_status == C64_DEVICE_PALETTE_REQUESTED);
 
     assert(c64_stream_control_to(&ctx, "1.2.3.4", 64, true, 1, "dest"));
     assert(!g_rest.last_start_palette);
@@ -183,6 +185,7 @@ TEST(device_palette_rejection_retries_without_palette)
     ctx.stream_control_transport = C64_STREAM_TRANSPORT_AUTO;
     ctx.rest_client = kDummyClient;
     ctx.follow_device_palette = true;
+    ctx.device_palette_request_supported = true;
     g_rest.reject_palette = true;
     g_rest.start_ok = true;
 
@@ -190,6 +193,12 @@ TEST(device_palette_rejection_retries_without_palette)
     assert(g_rest.start_calls == 2);
     assert(!g_rest.last_start_palette);
     assert(g_legacy.calls == 0);
+    assert(!ctx.device_palette_request_supported);
+    assert(ctx.device_palette_status == C64_DEVICE_PALETTE_UNSUPPORTED);
+
+    assert(c64_stream_control_to(&ctx, "1.2.3.4", 64, true, 0, "dest"));
+    assert(g_rest.start_calls == 3);
+    assert(!g_rest.last_start_palette);
 }
 
 TEST(not_supported_404_demotes_permanently_and_falls_back)
@@ -317,12 +326,15 @@ TEST(forced_legacy_never_tries_rest)
     memset(&ctx, 0, sizeof(ctx));
     ctx.stream_control_transport = C64_STREAM_TRANSPORT_LEGACY;
     ctx.rest_client = kDummyClient;
+    ctx.follow_device_palette = true;
+    ctx.device_palette_request_supported = true;
 
     bool ok = c64_stream_control_to(&ctx, "1.2.3.4", 64, true, 0, "dest");
 
     assert(ok);
     assert(g_rest.start_calls == 0);
     assert(g_legacy.calls == 1);
+    assert(ctx.device_palette_status == C64_DEVICE_PALETTE_UNSUPPORTED);
 }
 
 TEST(forced_rest_never_falls_back_even_when_fallback_eligible)
@@ -352,12 +364,15 @@ TEST(permanent_demotion_skips_rest_on_next_call)
     ctx.stream_control_transport = C64_STREAM_TRANSPORT_AUTO;
     ctx.rest_client = kDummyClient;
     ctx.stream_rest_demoted_until_ns = UINT64_MAX;
+    ctx.follow_device_palette = true;
+    ctx.device_palette_request_supported = true;
 
     bool ok = c64_stream_control_to(&ctx, "1.2.3.4", 64, true, 0, "dest");
 
     assert(ok);
     assert(g_rest.start_calls == 0);
     assert(g_legacy.calls == 1);
+    assert(ctx.device_palette_status == C64_DEVICE_PALETTE_UNSUPPORTED);
 }
 
 TEST(expiry_demotion_retries_rest_after_expiry)

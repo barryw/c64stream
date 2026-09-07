@@ -312,12 +312,13 @@ void c64_source_apply_palette(struct c64_source *context, obs_data_t *settings)
     }
 
     pthread_mutex_lock(&context->palette_mutex);
-    if (follow_device && follow_changed) {
-        context->device_palette_received = false;
-        context->device_palette_generation = 0;
+    os_atomic_set_bool(&context->follow_device_palette, follow_device);
+    if (follow_changed) {
+        os_atomic_set_bool(&context->device_palette_request_supported, true);
+        os_atomic_set_long(&context->device_palette_status, C64_DEVICE_PALETTE_UNKNOWN);
     }
-    if (follow_device && context->device_palette_received) {
-        memcpy(colors, context->device_palette, sizeof(colors));
+    if (follow_device && context->device_palette.colors_valid) {
+        memcpy(colors, context->device_palette.colors, sizeof(colors));
     }
     if (!context->palette_initialized) {
         c64_color_lut_init(&context->color_lut, colors);
@@ -328,7 +329,6 @@ void c64_source_apply_palette(struct c64_source *context, obs_data_t *settings)
     strncpy(context->palette_id, palette_id, sizeof(context->palette_id) - 1);
     context->palette_id[sizeof(context->palette_id) - 1] = '\0';
     pthread_mutex_unlock(&context->palette_mutex);
-    os_atomic_set_bool(&context->follow_device_palette, follow_device);
 
     if (follow_changed && context->streaming) {
         c64_schedule_retry_task(context, "device palette mode changed");
@@ -1188,6 +1188,11 @@ void *c64_create(obs_data_t *settings, obs_source_t *source)
     os_atomic_set_long(&context->debug_recvfrom_eagain, 0);
     os_atomic_set_long(&context->debug_recvfrom_bytes_total, 0);
     os_atomic_set_long(&context->debug_packets_dropped_size, 0);
+    os_atomic_set_long(&context->palette_packets_received, 0);
+    os_atomic_set_long(&context->palette_packets_applied, 0);
+    os_atomic_set_long(&context->palette_packets_ignored, 0);
+    os_atomic_set_bool(&context->device_palette_request_supported, true);
+    os_atomic_set_long(&context->device_palette_status, C64_DEVICE_PALETTE_UNKNOWN);
 
     // Preallocate Stage-1 network FIFOs (Stage-1: socket recv, Stage-2: buffering/order)
     // Video is higher PPS; keep a larger backlog to absorb short processing stalls.
@@ -1764,6 +1769,11 @@ void c64_update(void *data, obs_data_t *settings)
         c64_device_registry_apply_selected(settings);
         snprintf(context->active_device_id, sizeof(context->active_device_id), "%s",
                  selected_device_id ? selected_device_id : "");
+        os_atomic_set_bool(&context->device_palette_request_supported, true);
+        os_atomic_set_long(&context->device_palette_status, C64_DEVICE_PALETTE_UNKNOWN);
+        pthread_mutex_lock(&context->palette_mutex);
+        context->device_palette.ordering_valid = false;
+        pthread_mutex_unlock(&context->palette_mutex);
     }
 
     context->preserve_size = c64_effect_settings_resolve_preserve_size(settings, C64_SOURCE_SAVED_SETTING_KEYS,
@@ -2238,8 +2248,7 @@ static bool c64_start_streaming_inner(struct c64_source *context)
     // baseline: keep the last complete LUT until the first packet from the new
     // stream arrives, avoiding a visible default-palette flash on reconnect.
     pthread_mutex_lock(&context->palette_mutex);
-    context->device_palette_received = false;
-    context->device_palette_generation = 0;
+    context->device_palette.ordering_valid = false;
     pthread_mutex_unlock(&context->palette_mutex);
 
     // Send start commands to C64 Ultimate

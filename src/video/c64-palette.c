@@ -243,7 +243,7 @@ void c64_palette_populate_list(obs_property_t *palette_prop)
     }
 
     obs_property_list_clear(palette_prop);
-    obs_property_list_add_string(palette_prop, "Follow device", C64_DEVICE_PALETTE_ID);
+    obs_property_list_add_string(palette_prop, obs_module_text("PaletteFollowDevice"), C64_DEVICE_PALETTE_ID);
 
     for (int i = 0; i < palette_system.palette_count; i++) {
         char display_name[C64_PALETTE_NAME_MAX + 16]; // Extra space for " (Preset)" suffix

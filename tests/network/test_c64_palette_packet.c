@@ -62,6 +62,16 @@ int main(void)
     assert(!c64_palette_generation_is_newer(0xFFFF, 0));
     assert(!c64_palette_generation_is_newer(0x8000, 0));
 
+    struct c64_palette_state state = {0};
+    assert(c64_palette_state_accept(&state, 10, palette));
+    assert(state.colors_valid && state.ordering_valid && state.generation == 10);
+    assert(!c64_palette_state_accept(&state, 10, palette));
+    assert(!c64_palette_state_accept(&state, 9, palette));
+    state.generation = 0xFFFF;
+    assert(c64_palette_state_accept(&state, 0, palette));
+    state.ordering_valid = false;
+    assert(c64_palette_state_accept(&state, 0, palette));
+
     puts("test_c64_palette_packet: PASS");
     return 0;
 }
