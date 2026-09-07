@@ -37,12 +37,14 @@ static struct {
     int start_calls;
     int stop_calls;
     bool start_ok;
+    bool reject_palette;
     bool stop_ok;
     c64_rest_outcome_t start_outcome;
     c64_rest_outcome_t stop_outcome;
     long start_status;
     long stop_status;
     bool last_start_audio;
+    bool last_start_palette;
     bool last_stop_audio;
     char last_destination[256];
 } g_rest;
@@ -65,12 +67,13 @@ static void reset_stubs(void)
     memset(&g_legacy, 0, sizeof(g_legacy));
 }
 
-bool c64_rest_stream_start_with_outcome(c64_rest_client_t *client, bool audio, const char *destination,
+bool c64_rest_stream_start_with_outcome(c64_rest_client_t *client, bool audio, const char *destination, bool palette,
                                         c64_rest_outcome_t *outcome, long *status)
 {
     (void)client;
     g_rest.start_calls++;
     g_rest.last_start_audio = audio;
+    g_rest.last_start_palette = palette;
     if (destination) {
         snprintf(g_rest.last_destination, sizeof(g_rest.last_destination), "%s", destination);
     }
@@ -79,6 +82,15 @@ bool c64_rest_stream_start_with_outcome(c64_rest_client_t *client, bool audio, c
     }
     if (status) {
         *status = g_rest.start_status;
+    }
+    if (palette && g_rest.reject_palette) {
+        if (outcome) {
+            *outcome = C64_REST_BAD_REQUEST;
+        }
+        if (status) {
+            *status = 400;
+        }
+        return false;
     }
     return g_rest.start_ok;
 }
@@ -141,7 +153,42 @@ TEST(rest_success_never_falls_back)
     assert(ok);
     assert(g_rest.start_calls == 1);
     assert(g_rest.last_start_audio); // stream_id == 1 => audio
+    assert(!g_rest.last_start_palette);
     assert(strcmp(g_rest.last_destination, "5.6.7.8:12345") == 0);
+    assert(g_legacy.calls == 0);
+}
+
+TEST(device_palette_is_requested_only_for_video)
+{
+    reset_stubs();
+    struct c64_source ctx;
+    memset(&ctx, 0, sizeof(ctx));
+    ctx.stream_control_transport = C64_STREAM_TRANSPORT_AUTO;
+    ctx.rest_client = kDummyClient;
+    ctx.follow_device_palette = true;
+    g_rest.start_ok = true;
+
+    assert(c64_stream_control_to(&ctx, "1.2.3.4", 64, true, 0, "dest"));
+    assert(g_rest.last_start_palette);
+
+    assert(c64_stream_control_to(&ctx, "1.2.3.4", 64, true, 1, "dest"));
+    assert(!g_rest.last_start_palette);
+}
+
+TEST(device_palette_rejection_retries_without_palette)
+{
+    reset_stubs();
+    struct c64_source ctx;
+    memset(&ctx, 0, sizeof(ctx));
+    ctx.stream_control_transport = C64_STREAM_TRANSPORT_AUTO;
+    ctx.rest_client = kDummyClient;
+    ctx.follow_device_palette = true;
+    g_rest.reject_palette = true;
+    g_rest.start_ok = true;
+
+    assert(c64_stream_control_to(&ctx, "1.2.3.4", 64, true, 0, "dest"));
+    assert(g_rest.start_calls == 2);
+    assert(!g_rest.last_start_palette);
     assert(g_legacy.calls == 0);
 }
 
@@ -405,6 +452,8 @@ int main(void)
 {
     RUN_TEST(should_fallback_only_for_not_supported);
     RUN_TEST(rest_success_never_falls_back);
+    RUN_TEST(device_palette_is_requested_only_for_video);
+    RUN_TEST(device_palette_rejection_retries_without_palette);
     RUN_TEST(not_supported_404_demotes_permanently_and_falls_back);
     RUN_TEST(not_supported_501_demotes_with_expiry_and_falls_back);
     RUN_TEST(forbidden_403_never_falls_back);

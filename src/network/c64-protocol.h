@@ -50,15 +50,22 @@ static inline void c64_default_ports_for_pair(long pair_index, uint32_t *video_p
 #define C64_BYTES_PER_LINE 192 // 384 pixels / 2 (4-bit per pixel) - keeping original
 #define C64_LINES_PER_PACKET 4
 
-/* Runtime VIC palette packet proposed in 1541ultimate issue #850. */
-static inline bool c64_parse_palette_packet(const uint8_t *packet, size_t size, uint32_t palette[16])
+static inline bool c64_palette_generation_is_newer(uint16_t candidate, uint16_t current)
 {
-    if (!packet || !palette || size != C64_PALETTE_PACKET_SIZE || packet[0] != 0 || packet[1] != 0 || packet[2] != 0 ||
-        packet[3] != 0 || packet[4] != 239 || packet[5] != 0 || packet[6] != 0x80 || packet[7] != 0x01 ||
-        packet[8] != 1 || packet[9] != 4 || packet[10] != 1 || packet[11] != 0) {
+    return (int16_t)(candidate - current) > 0;
+}
+
+/* Runtime VIC palette packet proposed in 1541ultimate issue #850. */
+static inline bool c64_parse_palette_packet(const uint8_t *packet, size_t size, uint16_t *generation,
+                                            uint32_t palette[16])
+{
+    if (!packet || !generation || !palette || size != C64_PALETTE_PACKET_SIZE || packet[4] != 239 || packet[5] != 0 ||
+        packet[6] != 0x80 || packet[7] != 0x01 || packet[8] != 1 || packet[9] != 4 || packet[10] != 1 ||
+        packet[11] != 0) {
         return false;
     }
 
+    *generation = (uint16_t)packet[0] | ((uint16_t)packet[1] << 8);
     for (size_t i = 0; i < 16; i++) {
         const uint8_t *rgb = &packet[C64_VIDEO_HEADER_SIZE + i * 3];
         palette[i] = 0xFF000000u | (uint32_t)rgb[0] | ((uint32_t)rgb[1] << 8) | ((uint32_t)rgb[2] << 16);

@@ -790,11 +790,15 @@ void c64_process_video_statistics_batch(struct c64_source *context, uint64_t cur
 
     // Load and reset debug counters
     long recv_calls = os_atomic_load_long(&context->debug_recvfrom_calls);
+    long palette_packets = os_atomic_load_long(&context->palette_packets_received);
+    long stale_palette_packets = os_atomic_load_long(&context->palette_packets_stale);
 
     os_atomic_set_long(&context->debug_recvfrom_calls, 0);
     os_atomic_set_long(&context->debug_recvfrom_eagain, 0);
     os_atomic_set_long(&context->debug_recvfrom_bytes_total, 0);
     os_atomic_set_long(&context->debug_packets_dropped_size, 0);
+    os_atomic_set_long(&context->palette_packets_received, 0);
+    os_atomic_set_long(&context->palette_packets_stale, 0);
 
     if (packets_received > 0 || recv_calls > 0) {
         const uint64_t stream_start_ns = os_atomic_load_bool(&context->stream_start_set) ? context->stream_start_ns : 0;
@@ -819,6 +823,10 @@ void c64_process_video_statistics_batch(struct c64_source *context, uint64_t cur
                       frame_completion_rate);
         C64_LOG_DEBUG("" VIDEO_LOG_PREFIX " Capture drops %.1f%% | Delivery drops %.1f%% | Avg latency %.1f ms",
                       capture_drop_pct, delivery_drop_pct, avg_pipeline_latency);
+        if (palette_packets > 0 || stale_palette_packets > 0) {
+            C64_LOG_DEBUG("" VIDEO_LOG_PREFIX " Device palette packets %ld | stale %ld", palette_packets,
+                          stale_palette_packets);
+        }
     }
 
     // Reset diagnostic counters and update timestamp
@@ -1093,11 +1101,26 @@ void *c64_video_thread_func(void *data)
             // Stage-1: UDP ingest
             // Keep the socket receive path minimal to avoid receiver-side backpressure.
             // Palette packets bypass video accounting, sorting, and frame assembly.
+            uint16_t generation;
             uint32_t palette[16];
-            if (received > 0 && c64_parse_palette_packet(packet, (size_t)received, palette)) {
+            if (received > 0 && c64_parse_palette_packet(packet, (size_t)received, &generation, palette)) {
+                if (context->network_file) {
+                    c64_network_log_palette_packet(context, generation, (size_t)received, os_gettime_ns());
+                }
                 pthread_mutex_lock(&context->palette_mutex);
-                c64_color_lut_update(&context->color_lut, palette);
-                context->palette_initialized = true;
+                if (os_atomic_load_bool(&context->follow_device_palette)) {
+                    const bool newer = c64_palette_generation_is_newer(generation, context->device_palette_generation);
+                    if (!context->device_palette_received || newer) {
+                        memcpy(context->device_palette, palette, sizeof(context->device_palette));
+                        context->device_palette_generation = generation;
+                        context->device_palette_received = true;
+                        c64_color_lut_update(&context->color_lut, palette);
+                        context->palette_initialized = true;
+                    } else if (generation != context->device_palette_generation) {
+                        os_atomic_inc_long(&context->palette_packets_stale);
+                    }
+                    os_atomic_inc_long(&context->palette_packets_received);
+                }
                 pthread_mutex_unlock(&context->palette_mutex);
                 continue;
             }

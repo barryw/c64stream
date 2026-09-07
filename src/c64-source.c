@@ -281,11 +281,15 @@ void c64_source_apply_palette(struct c64_source *context, obs_data_t *settings)
     if (!palette_id || !palette_id[0]) {
         palette_id = "Default";
     }
+    const bool follow_device = strcmp(palette_id, C64_DEVICE_PALETTE_ID) == 0;
+    const bool follow_changed = os_atomic_load_bool(&context->follow_device_palette) != follow_device;
 
     // Resolve the catalogue colours for this palette (loads from VPL on demand).
     // This reads only shared read-mostly catalogue state, never a shared LUT.
     uint32_t colors[16];
-    if (!c64_palette_resolve_colors(palette_id, colors)) {
+    if (follow_device) {
+        memcpy(colors, c64_default_palette, sizeof(colors));
+    } else if (!c64_palette_resolve_colors(palette_id, colors)) {
         // Unknown palette (e.g. deleted): fall back to Default so the source
         // still renders with a valid LUT rather than leaving it stale.
         if (!c64_palette_resolve_colors("Default", colors)) {
@@ -296,7 +300,7 @@ void c64_source_apply_palette(struct c64_source *context, obs_data_t *settings)
 
     // Apply this source's own per-colour overrides (stored per source in its
     // OBS settings), so colour edits stay isolated to this instance.
-    if (settings) {
+    if (settings && !follow_device) {
         for (int i = 0; i < 16; i++) {
             char key[32];
             snprintf(key, sizeof(key), "palette_color_%d", i);
@@ -308,6 +312,13 @@ void c64_source_apply_palette(struct c64_source *context, obs_data_t *settings)
     }
 
     pthread_mutex_lock(&context->palette_mutex);
+    if (follow_device && follow_changed) {
+        context->device_palette_received = false;
+        context->device_palette_generation = 0;
+    }
+    if (follow_device && context->device_palette_received) {
+        memcpy(colors, context->device_palette, sizeof(colors));
+    }
     if (!context->palette_initialized) {
         c64_color_lut_init(&context->color_lut, colors);
         context->palette_initialized = true;
@@ -317,6 +328,11 @@ void c64_source_apply_palette(struct c64_source *context, obs_data_t *settings)
     strncpy(context->palette_id, palette_id, sizeof(context->palette_id) - 1);
     context->palette_id[sizeof(context->palette_id) - 1] = '\0';
     pthread_mutex_unlock(&context->palette_mutex);
+    os_atomic_set_bool(&context->follow_device_palette, follow_device);
+
+    if (follow_changed && context->streaming) {
+        c64_schedule_retry_task(context, "device palette mode changed");
+    }
 }
 
 static bool c64_try_get_prefer_pal_from_obs_fps(bool *prefer_pal)
@@ -1304,7 +1320,7 @@ void *c64_create(obs_data_t *settings, obs_source_t *source)
     if (!palette_id || !palette_id[0]) {
         // No palette specified - select Default (first startup)
         c64_palette_select("Default");
-    } else {
+    } else if (strcmp(palette_id, C64_DEVICE_PALETTE_ID) != 0) {
         // Palette specified - try to select it, fall back to Default if not found
         if (!c64_palette_select(palette_id)) {
             // Palette not found (was deleted) - fall back to Default
@@ -2217,6 +2233,18 @@ static bool c64_start_streaming_inner(struct c64_source *context)
         pthread_mutex_unlock(&context->stream_start_mutex);
     }
     C64_LOG_DEBUG("Synthetic A/V timing state reset for reconnection");
+
+    // A firmware reboot resets its palette generation. Clear the receiver's
+    // generation baseline whenever this source establishes a fresh stream so
+    // generation zero is accepted and stale colors are not carried across it.
+    pthread_mutex_lock(&context->palette_mutex);
+    context->device_palette_received = false;
+    context->device_palette_generation = 0;
+    if (os_atomic_load_bool(&context->follow_device_palette)) {
+        memcpy(context->device_palette, c64_default_palette, sizeof(context->device_palette));
+        c64_color_lut_update(&context->color_lut, c64_default_palette);
+    }
+    pthread_mutex_unlock(&context->palette_mutex);
 
     // Send start commands to C64 Ultimate
     context->last_start_command_time_ns = os_gettime_ns();

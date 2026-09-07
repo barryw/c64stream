@@ -17,8 +17,13 @@ See <https://www.gnu.org/licenses/> for details.
 int main(void)
 {
     uint8_t packet[C64_PALETTE_PACKET_SIZE] = {0};
+    uint16_t generation = 0;
     uint32_t palette[16];
 
+    packet[0] = 0x34;
+    packet[1] = 0x12;
+    packet[2] = 0xCD; // Frame is intentionally unspecified for software packets.
+    packet[3] = 0xAB;
     packet[4] = 239;
     packet[6] = 0x80;
     packet[7] = 0x01;
@@ -31,14 +36,20 @@ int main(void)
         packet[C64_VIDEO_HEADER_SIZE + i * 3 + 2] = (uint8_t)(i + 32);
     }
 
-    assert(c64_parse_palette_packet(packet, sizeof(packet), palette));
+    assert(c64_parse_palette_packet(packet, sizeof(packet), &generation, palette));
+    assert(generation == 0x1234);
     assert(palette[0] == 0xFF201000u);
     assert(palette[15] == 0xFF2F1F0Fu);
 
     packet[10] = 0;
-    assert(!c64_parse_palette_packet(packet, sizeof(packet), palette));
+    assert(!c64_parse_palette_packet(packet, sizeof(packet), &generation, palette));
     packet[10] = 1;
-    assert(!c64_parse_palette_packet(packet, sizeof(packet) - 1, palette));
+    assert(!c64_parse_palette_packet(packet, sizeof(packet) - 1, &generation, palette));
+
+    assert(c64_palette_generation_is_newer(11, 10));
+    assert(!c64_palette_generation_is_newer(10, 10));
+    assert(!c64_palette_generation_is_newer(9, 10));
+    assert(c64_palette_generation_is_newer(0, 0xFFFF));
 
     puts("test_c64_palette_packet: PASS");
     return 0;

@@ -2120,9 +2120,17 @@ obs_properties_t *c64_create_properties(void *data)
     // This ensures colors are correct when properties dialog first opens
     // Get fresh settings reference since the previous one was released
     obs_data_t *color_settings = obs_source_get_settings(context->source);
+    const bool follow_device = strcmp(obs_data_get_string(color_settings, C64_PALETTE_KEY), C64_DEVICE_PALETTE_ID) == 0;
+    obs_property_set_enabled(import_path, !follow_device);
+    obs_property_set_enabled(export_path, !follow_device);
+    obs_property_set_enabled(
+        delete_btn, !follow_device && !c64_palette_is_preset(obs_data_get_string(color_settings, C64_PALETTE_KEY)));
+    obs_property_set_enabled(color_editor_group, !follow_device);
     // The initialization flag should still be set from line 315 (same underlying settings data)
     // This protects the update_palette_color_properties call below from triggering spurious auto-saves
-    update_palette_color_properties(color_settings);
+    if (!follow_device) {
+        update_palette_color_properties(color_settings);
+    }
     // Clear initialization flag now that properties UI setup is complete
     obs_data_erase(color_settings, C64_PALETTE_INITIALIZING_KEY);
     obs_data_release(color_settings);
@@ -3324,7 +3332,6 @@ static void update_palette_color_properties(obs_data_t *settings)
 
 static bool palette_changed(void *priv, obs_properties_t *props, obs_property_t *property, obs_data_t *settings)
 {
-    UNUSED_PARAMETER(props);
     struct c64_source *context = (struct c64_source *)priv;
 
     if (!settings) {
@@ -3335,9 +3342,11 @@ static bool palette_changed(void *priv, obs_properties_t *props, obs_property_t 
     if (!palette_id || !palette_id[0]) {
         return false;
     }
+    const bool follow_device = strcmp(palette_id, C64_DEVICE_PALETTE_ID) == 0;
 
     // Update tooltip with palette description
-    const char *desc = c64_palette_get_description(palette_id);
+    const char *desc = follow_device ? "Use the runtime VIC palette reported by the Ultimate."
+                                     : c64_palette_get_description(palette_id);
     if (desc && property) {
         obs_property_set_long_description(property, desc);
     } else if (property) {
@@ -3347,8 +3356,24 @@ static bool palette_changed(void *priv, obs_properties_t *props, obs_property_t 
     // Enable/disable delete button based on whether selected palette is custom
     obs_property_t *delete_btn = obs_properties_get(props, "palette_delete");
     if (delete_btn) {
-        bool is_custom = !c64_palette_is_preset(palette_id);
+        bool is_custom = !follow_device && !c64_palette_is_preset(palette_id);
         obs_property_set_enabled(delete_btn, is_custom);
+    }
+    const char *editor_properties[] = {"palette_import_path", "palette_export_path", "color_editor_group"};
+    for (size_t i = 0; i < sizeof(editor_properties) / sizeof(editor_properties[0]); i++) {
+        obs_property_t *editor = obs_properties_get(props, editor_properties[i]);
+        if (editor) {
+            obs_property_set_enabled(editor, !follow_device);
+        }
+    }
+
+    if (follow_device) {
+        c64_source_apply_palette(context, settings);
+        if (context && context->source) {
+            obs_source_update(context->source, settings);
+            obs_source_save(context->source);
+        }
+        return true;
     }
 
     // Check if palette needs to be loaded
@@ -3633,6 +3658,9 @@ static bool palette_color_changed(void *data, obs_properties_t *props, obs_prope
     struct c64_source *context = (struct c64_source *)data;
 
     if (!settings || !property) {
+        return false;
+    }
+    if (strcmp(obs_data_get_string(settings, C64_PALETTE_KEY), C64_DEVICE_PALETTE_ID) == 0) {
         return false;
     }
 

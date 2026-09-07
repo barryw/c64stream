@@ -27,9 +27,15 @@ bool c64_stream_control_to(struct c64_source *context, const char *host, uint32_
     if (try_rest) {
         c64_rest_outcome_t outcome = C64_REST_UNREACHABLE;
         long status = 0;
+        const bool palette = stream_id == 0 && os_atomic_load_bool(&context->follow_device_palette);
         bool ok = enable ? c64_rest_stream_start_with_outcome(context->rest_client, stream_id == 1, destination,
-                                                              &outcome, &status)
+                                                              palette, &outcome, &status)
                          : c64_rest_stream_stop_with_outcome(context->rest_client, stream_id == 1, &outcome, &status);
+        if (!ok && enable && palette && outcome == C64_REST_BAD_REQUEST) {
+            C64_LOG_WARNING("" STREAM_CONTROL_LOG_PREFIX
+                            " Device rejected runtime palette packets; starting video without them");
+            ok = c64_rest_stream_start_with_outcome(context->rest_client, false, destination, false, &outcome, &status);
+        }
         if (ok) {
             C64_LOG_INFO("" STREAM_CONTROL_LOG_PREFIX " Stream %u %s via REST", stream_id,
                          enable ? "started" : "stopped");
