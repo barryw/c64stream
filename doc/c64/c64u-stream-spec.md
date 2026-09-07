@@ -164,8 +164,10 @@ The c64stream renderer snapshots one complete lookup table per assembled frame,
 so a received update takes effect on a whole-frame boundary and cannot mix two
 palettes within one output frame.
 
-Palette packets use the same source address as the FPGA VIC stream, so receivers
-apply the same selected-device peer filter to both packet types.
+For unicast, palette packets can use a different interface from the FPGA VIC
+stream because the software UDP stack selects the route. Receivers must accept
+only the configured device address or another address verified by device
+discovery. Multicast palette packets use the VIC stream interface.
 
 ### Authentic C64 Display Border Dimensions
 
