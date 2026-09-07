@@ -14,6 +14,7 @@ See <https://www.gnu.org/licenses/> for details.
 
 // C64 Stream constants
 #define C64_VIDEO_PACKET_SIZE 780
+#define C64_PALETTE_PACKET_SIZE 60
 #define C64_STREAM_DEST_MAX 80
 #define C64_AUDIO_PACKET_SIZE 770
 #define C64_VIDEO_HEADER_SIZE 12
@@ -48,6 +49,22 @@ static inline void c64_default_ports_for_pair(long pair_index, uint32_t *video_p
 #define C64_PIXELS_PER_LINE 384
 #define C64_BYTES_PER_LINE 192 // 384 pixels / 2 (4-bit per pixel) - keeping original
 #define C64_LINES_PER_PACKET 4
+
+/* Runtime VIC palette packet proposed in 1541ultimate issue #850. */
+static inline bool c64_parse_palette_packet(const uint8_t *packet, size_t size, uint32_t palette[16])
+{
+    if (!packet || !palette || size != C64_PALETTE_PACKET_SIZE || packet[0] != 0 || packet[1] != 0 || packet[2] != 0 ||
+        packet[3] != 0 || packet[4] != 239 || packet[5] != 0 || packet[6] != 0x80 || packet[7] != 0x01 ||
+        packet[8] != 1 || packet[9] != 4 || packet[10] != 1 || packet[11] != 0) {
+        return false;
+    }
+
+    for (size_t i = 0; i < 16; i++) {
+        const uint8_t *rgb = &packet[C64_VIDEO_HEADER_SIZE + i * 3];
+        palette[i] = 0xFF000000u | (uint32_t)rgb[0] | ((uint32_t)rgb[1] << 8) | ((uint32_t)rgb[2] << 16);
+    }
+    return true;
+}
 
 /* All frame storage is PAL-sized.  Packet-derived heights must therefore
  * never escape this range before reaching render or recording code. */

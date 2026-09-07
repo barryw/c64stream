@@ -1092,7 +1092,16 @@ void *c64_video_thread_func(void *data)
 
             // Stage-1: UDP ingest
             // Keep the socket receive path minimal to avoid receiver-side backpressure.
-            // No parsing, no sorting, no per-packet logging, no blocking.
+            // Palette packets bypass video accounting, sorting, and frame assembly.
+            uint32_t palette[16];
+            if (received > 0 && c64_parse_palette_packet(packet, (size_t)received, palette)) {
+                pthread_mutex_lock(&context->palette_mutex);
+                c64_color_lut_update(&context->color_lut, palette);
+                context->palette_initialized = true;
+                pthread_mutex_unlock(&context->palette_mutex);
+                continue;
+            }
+
             if (received != C64_VIDEO_PACKET_SIZE) {
                 if (received > 0) {
                     os_atomic_inc_long(&context->debug_packets_dropped_size);
