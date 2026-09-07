@@ -41,15 +41,26 @@ int main(void)
     assert(palette[0] == 0xFF201000u);
     assert(palette[15] == 0xFF2F1F0Fu);
 
-    packet[10] = 0;
-    assert(!c64_parse_palette_packet(packet, sizeof(packet), &generation, palette));
-    packet[10] = 1;
+    const size_t format_offsets[] = {4, 5, 6, 7, 8, 9, 10, 11};
+    for (size_t i = 0; i < sizeof(format_offsets) / sizeof(format_offsets[0]); i++) {
+        const size_t offset = format_offsets[i];
+        packet[offset] ^= 0x01;
+        assert(!c64_parse_palette_packet(packet, sizeof(packet), &generation, palette));
+        packet[offset] ^= 0x01;
+    }
     assert(!c64_parse_palette_packet(packet, sizeof(packet) - 1, &generation, palette));
+    assert(!c64_parse_palette_packet(packet, sizeof(packet) + 1, &generation, palette));
+    assert(!c64_parse_palette_packet(NULL, sizeof(packet), &generation, palette));
+    assert(!c64_parse_palette_packet(packet, sizeof(packet), NULL, palette));
+    assert(!c64_parse_palette_packet(packet, sizeof(packet), &generation, NULL));
 
     assert(c64_palette_generation_is_newer(11, 10));
     assert(!c64_palette_generation_is_newer(10, 10));
     assert(!c64_palette_generation_is_newer(9, 10));
     assert(c64_palette_generation_is_newer(0, 0xFFFF));
+    assert(c64_palette_generation_is_newer(1, 0xFFFF));
+    assert(!c64_palette_generation_is_newer(0xFFFF, 0));
+    assert(!c64_palette_generation_is_newer(0x8000, 0));
 
     puts("test_c64_palette_packet: PASS");
     return 0;

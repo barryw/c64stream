@@ -3368,10 +3368,11 @@ static bool palette_changed(void *priv, obs_properties_t *props, obs_property_t 
     }
 
     if (follow_device) {
-        c64_source_apply_palette(context, settings);
         if (context && context->source) {
             obs_source_update(context->source, settings);
             obs_source_save(context->source);
+        } else {
+            c64_source_apply_palette(context, settings);
         }
         return true;
     }

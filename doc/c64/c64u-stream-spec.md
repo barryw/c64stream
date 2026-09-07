@@ -124,6 +124,41 @@ The following RGB colors are only indicative examples. The actual RGB color mapp
 | 14   | Light Blue  | #887ECB |
 | 15   | Light Grey  | #ADADAD |
 
+### Runtime Palette Packet
+
+Supporting firmware can send the active 16-color RGB palette on the video UDP
+port. The client must opt in by starting video through REST with `palette=1`;
+ordinary and legacy stream starts remain unchanged.
+
+The packet is software-generated and does not consume a video sequence number.
+It is identified by its exact 60-byte size and the complete header below before
+ordinary video packet accounting or frame assembly.
+
+| Offset | Field           | Value or meaning                                       |
+| ------ | --------------- | ------------------------------------------------------ |
+| 0–1    | Generation      | 16-bit LE; advances when the active palette changes    |
+| 2–3    | Reserved        | Not used for ordering                                  |
+| 4–5    | Line number     | 239                                                    |
+| 6–7    | Pixels per line | 384                                                    |
+| 8      | Records         | 1                                                      |
+| 9      | VIC index depth | 4 bits                                                 |
+| 10–11  | Encoding        | 1                                                      |
+| 12–59  | Palette         | 16 triples in VIC index order: `red`, `green`, `blue` |
+
+Firmware sends the current palette immediately after an opted-in start, repeats
+it once per second so a lost UDP packet repairs itself, and coalesces rapid
+changes to at most one packet per 20 ms. Generation comparison uses 16-bit
+serial arithmetic so wrap from 65535 to 0 is newer. A fresh stream resets the
+client's generation baseline because a firmware reboot also resets generation.
+The c64stream renderer snapshots one complete lookup table per assembled frame,
+so a received update takes effect on a whole-frame boundary and cannot mix two
+palettes within one output frame.
+
+On a device with more than one active network interface, an unicast palette
+packet can come from a different verified address of the same device than the
+FPGA video packets. Multicast palette packets retain the VIC stream's source
+address so multiple devices sharing a group remain distinguishable.
+
 ### Authentic C64 Display Border Dimensions
 
 Inner screen size is identical for PAL and NTSC: **320 × 200 pixels**

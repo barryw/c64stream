@@ -53,7 +53,6 @@ void c64_network_write_header(struct c64_source *context)
     // Reset packet timing trackers for new recording session
     context->last_video_packet_us = 0;
     context->last_audio_packet_us = 0;
-    context->last_palette_packet_us = 0;
 
     // Write CSV header for network packet analysis
     fprintf(context->network_file,
@@ -66,43 +65,6 @@ void c64_network_write_header(struct c64_source *context)
     fflush(context->network_file);
 
     C64_LOG_INFO("" RECORD_LOG_PREFIX " Network packet CSV header written successfully");
-    pthread_mutex_unlock(&context->recording_mutex);
-}
-
-void c64_network_log_palette_packet(struct c64_source *context, uint16_t generation, size_t packet_size,
-                                    uint64_t packet_timestamp_ns)
-{
-    if (!context) {
-        return;
-    }
-
-    const uint64_t base_ns = context->csv_timing_base_ns ? context->csv_timing_base_ns : packet_timestamp_ns;
-    const uint64_t elapsed_us = (packet_timestamp_ns - base_ns) / 1000;
-    const uint64_t interval_us = context->last_palette_packet_us ? elapsed_us - context->last_palette_packet_us : 0;
-    context->last_palette_packet_us = elapsed_us;
-
-    char log_buffer[512];
-    int len = snprintf(log_buffer, sizeof(log_buffer), "palette,%llu,%u,0,239,0,%zu,48,0,%llu,%llu,%llu,%llu",
-                       (unsigned long long)elapsed_us, generation, packet_size, (unsigned long long)interval_us,
-                       (unsigned long long)os_atomic_load_long(&context->video_packets_received),
-                       (unsigned long long)os_atomic_load_long(&context->audio_packets_received),
-                       (unsigned long long)os_atomic_load_long(&context->video_sequence_errors));
-    if (context->csv_debug_enabled && len < (int)sizeof(log_buffer)) {
-        const int ret = snprintf(log_buffer + len, sizeof(log_buffer) - len, ",0,0");
-        if (ret > 0) {
-            len += ret;
-        }
-    }
-    if (len < (int)sizeof(log_buffer)) {
-        log_buffer[len++] = '\n';
-    }
-
-    if (pthread_mutex_lock(&context->recording_mutex) != 0) {
-        return;
-    }
-    if (context->network_file) {
-        fwrite(log_buffer, 1, len, context->network_file);
-    }
     pthread_mutex_unlock(&context->recording_mutex);
 }
 

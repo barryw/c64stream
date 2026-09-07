@@ -129,8 +129,6 @@ struct c64_source {
     uint16_t device_palette_generation;
     bool device_palette_received;
     volatile bool follow_device_palette;
-    volatile long palette_packets_received;
-    volatile long palette_packets_stale;
     pthread_mutex_t palette_mutex;
 
     // Video data
@@ -311,7 +309,6 @@ struct c64_source {
     bool csv_debug_enabled;        // Snapshot of debug state for CSV headers/rows
     uint64_t last_video_packet_us; // Last video packet timestamp for interval calculation (per-session)
     uint64_t last_audio_packet_us; // Last audio packet timestamp for interval calculation (per-session)
-    uint64_t last_palette_packet_us;
     volatile long recorded_frames;
     volatile long recorded_audio_samples;
     uint64_t recorded_audio_bytes;
