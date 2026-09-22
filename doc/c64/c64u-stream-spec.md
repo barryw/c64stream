@@ -164,10 +164,11 @@ The c64stream renderer snapshots one complete lookup table per assembled frame,
 so a received update takes effect on a whole-frame boundary and cannot mix two
 palettes within one output frame.
 
-For unicast, palette packets can use a different interface from the FPGA VIC
-stream because the software UDP stack selects the route. Receivers must accept
-only the configured device address or another address verified by device
-discovery. Multicast palette packets use the VIC stream interface.
+Palette packets leave through the same interface as the FPGA VIC stream and
+from its source port 53248, for unicast and multicast alike, so they arrive from
+the same address and port as the video. On an Ultimate that answers on both
+Ethernet and Wi-Fi, that is the Ethernet address; receivers must accept only
+the configured device address or another address verified by device discovery.
 
 ### Authentic C64 Display Border Dimensions
 
