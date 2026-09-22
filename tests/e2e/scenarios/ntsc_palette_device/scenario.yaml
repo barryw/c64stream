@@ -1,4 +1,4 @@
-name: NTSC Follow Device Palette Unsupported
+name: NTSC Device Palette
 format: NTSC
 preset: Default
 mock_rest_enabled: true
@@ -8,11 +8,14 @@ overrides:
   audio_port: 11001
   stream_control_transport: 1
   palette: __device__
-  device_palette_expected: Default
+  device_palette_before_expected: Default
+  device_palette_expected: vibrant
+  device_palette_transition_fraction: 0.72
   debug_logging: true
 network_simulation:
-  reject_runtime_palette: true
-  expected_palette_requests: [true, false]
+  runtime_palette_vpl: vibrant
+  runtime_palette_delay_ms: 4000
+  expected_palette_requests: [true]
 assertions:
   - video_quality
   - audio
