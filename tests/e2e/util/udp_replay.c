@@ -17,7 +17,7 @@ Manifest format (CSV):
 All simulation logic (jitter, reordering) is precalculated by Python.
 */
 
-#define _POSIX_C_SOURCE 199309L
+#define _POSIX_C_SOURCE 200112L
 
 #include <stdint.h>
 
@@ -441,6 +441,12 @@ int main(int argc, char **argv)
     for (int i = 0; i < count; i++) {
         uint8_t *buf = packet_data + ((uint64_t)i * packet_stride);
         const size_t send_size = entries[i].size;
+#ifdef _WIN32
+        // Winsock sendto() takes int; send_size is bounded by MAX_PACKET_SIZE.
+        const int send_len = (int)send_size;
+#else
+        const size_t send_len = send_size;
+#endif
 
         // Wait until target time (absolute schedule).
         //
@@ -457,7 +463,7 @@ int main(int argc, char **argv)
 
         ssize_t rc = -1;
         for (int attempt = 0; attempt < 10; attempt++) {
-            rc = sendto(sock, (char *)buf, send_size, 0, (struct sockaddr *)&addr, sizeof(addr));
+            rc = sendto(sock, (char *)buf, send_len, 0, (struct sockaddr *)&addr, sizeof(addr));
             if (rc == (ssize_t)send_size) {
                 break;
             }
