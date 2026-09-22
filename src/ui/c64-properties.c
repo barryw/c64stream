@@ -78,6 +78,7 @@ static bool palette_export_path_changed(obs_properties_t *props, obs_property_t 
 static bool palette_delete_clicked(obs_properties_t *props, obs_property_t *property, void *data);
 static bool palette_color_changed(void *data, obs_properties_t *props, obs_property_t *property, obs_data_t *settings);
 static void update_palette_color_properties(obs_data_t *settings);
+static void set_palette_color_defaults(obs_data_t *settings);
 
 // Script automation callbacks
 static bool script_start_stop_clicked(obs_properties_t *props, obs_property_t *property, void *data);
@@ -3072,8 +3073,11 @@ void c64_set_property_defaults(obs_data_t *settings)
     // This prevents spurious "Default (Custom)" palette creation on Windows
     obs_data_set_bool(settings, C64_PALETTE_INITIALIZING_KEY, true);
 
-    // Initialize palette color properties from the current working palette
-    update_palette_color_properties(settings);
+    // Initialize palette color defaults from the current working palette. Defaults
+    // only: get_defaults runs before the source's palette id is applied, and a
+    // user value written here would override that palette in
+    // c64_source_apply_palette for any scene that carries just the id.
+    set_palette_color_defaults(settings);
 
     // Clear initialization flag - auto-save is now allowed
     obs_data_erase(settings, C64_PALETTE_INITIALIZING_KEY);
@@ -3300,6 +3304,19 @@ static bool config_import_path_changed(obs_properties_t *props, obs_property_t *
 // ============================================================================
 // Palette UI callbacks
 // ============================================================================
+
+static void set_palette_color_defaults(obs_data_t *settings)
+{
+    uint32_t *colors = c64_palette_get_working_colors();
+    if (!colors) {
+        return;
+    }
+    for (int i = 0; i < 16; i++) {
+        char key[32];
+        snprintf(key, sizeof(key), "palette_color_%d", i);
+        obs_data_set_default_int(settings, key, (long long)c64_bgra_to_obs_color(colors[i]));
+    }
+}
 
 static void update_palette_color_properties(obs_data_t *settings)
 {
