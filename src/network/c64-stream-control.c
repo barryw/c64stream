@@ -23,6 +23,14 @@ bool c64_stream_control_to(struct c64_source *context, const char *host, uint32_
     const c64_stream_transport_t transport = (c64_stream_transport_t)context->stream_control_transport;
     const uint64_t now = os_gettime_ns();
     const bool wants_palette = enable && stream_id == 0 && os_atomic_load_bool(&context->follow_device_palette);
+    if (wants_palette) {
+        // Every video (re)start may follow a firmware reboot, which restarts the palette
+        // generation counter. Drop only the ordering baseline so the last complete LUT
+        // survives until the first palette packet of the new stream arrives.
+        pthread_mutex_lock(&context->palette_mutex);
+        context->device_palette.ordering_valid = false;
+        pthread_mutex_unlock(&context->palette_mutex);
+    }
     const bool try_rest = transport != C64_STREAM_TRANSPORT_LEGACY && context->rest_client &&
                           (transport == C64_STREAM_TRANSPORT_REST || now >= context->stream_rest_demoted_until_ns);
     if (try_rest) {

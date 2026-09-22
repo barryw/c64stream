@@ -401,11 +401,13 @@ class PaletteMappingAssertion(EffectAssertion):
                 content_top = 0
                 content_bottom = height
             else:
-                # Get content region from first content frame
-                first_frame_idx = bounds.first_content_frame
+                # Get content region from the middle of the content range. Frames right
+                # after the logo->content transition can still carry non-black letterbox
+                # pixels, which makes the region detector fall back to the full frame.
+                mid_frame_idx = (bounds.first_content_frame + bounds.last_content_frame) // 2
 
                 # Read a frame to determine content bounds
-                cap.set(cv2.CAP_PROP_POS_FRAMES, first_frame_idx + 5)
+                cap.set(cv2.CAP_PROP_POS_FRAMES, mid_frame_idx)
                 ret, frame = cap.read()
                 if not ret:
                     return None

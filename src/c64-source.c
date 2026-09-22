@@ -2244,13 +2244,6 @@ static bool c64_start_streaming_inner(struct c64_source *context)
     }
     C64_LOG_DEBUG("Synthetic A/V timing state reset for reconnection");
 
-    // A firmware reboot resets its palette generation. Clear only the ordering
-    // baseline: keep the last complete LUT until the first packet from the new
-    // stream arrives, avoiding a visible default-palette flash on reconnect.
-    pthread_mutex_lock(&context->palette_mutex);
-    context->device_palette.ordering_valid = false;
-    pthread_mutex_unlock(&context->palette_mutex);
-
     // Send start commands to C64 Ultimate
     context->last_start_command_time_ns = os_gettime_ns();
     char video_dest[C64_STREAM_DEST_MAX];

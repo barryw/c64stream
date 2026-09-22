@@ -67,6 +67,17 @@ static void reset_stubs(void)
     memset(&g_legacy, 0, sizeof(g_legacy));
 }
 
+// Follow-device tests take palette_mutex, which a zeroed struct does not initialize on every platform.
+static void init_follow_ctx(struct c64_source *ctx)
+{
+    memset(ctx, 0, sizeof(*ctx));
+    pthread_mutex_init(&ctx->palette_mutex, NULL);
+    ctx->stream_control_transport = C64_STREAM_TRANSPORT_AUTO;
+    ctx->rest_client = kDummyClient;
+    ctx->follow_device_palette = true;
+    ctx->device_palette_request_supported = true;
+}
+
 bool c64_rest_stream_start_with_outcome(c64_rest_client_t *client, bool audio, const char *destination, bool palette,
                                         c64_rest_outcome_t *outcome, long *status)
 {
@@ -162,11 +173,7 @@ TEST(device_palette_is_requested_only_for_video)
 {
     reset_stubs();
     struct c64_source ctx;
-    memset(&ctx, 0, sizeof(ctx));
-    ctx.stream_control_transport = C64_STREAM_TRANSPORT_AUTO;
-    ctx.rest_client = kDummyClient;
-    ctx.follow_device_palette = true;
-    ctx.device_palette_request_supported = true;
+    init_follow_ctx(&ctx);
     g_rest.start_ok = true;
 
     assert(c64_stream_control_to(&ctx, "1.2.3.4", 64, true, 0, "dest"));
@@ -177,15 +184,47 @@ TEST(device_palette_is_requested_only_for_video)
     assert(!g_rest.last_start_palette);
 }
 
+TEST(video_start_in_follow_mode_resets_palette_generation_baseline)
+{
+    // A device reboot restarts its palette generation counter. Any video start,
+    // including the "already streaming" reconnect path, must drop the stale baseline
+    // or every post-reboot palette packet is rejected as not newer.
+    reset_stubs();
+    struct c64_source ctx;
+    init_follow_ctx(&ctx);
+    g_rest.start_ok = true;
+    g_rest.stop_ok = true;
+
+    ctx.device_palette.ordering_valid = true;
+    ctx.device_palette.generation = 503;
+    assert(c64_stream_control_to(&ctx, "1.2.3.4", 64, true, 0, "dest"));
+    assert(!ctx.device_palette.ordering_valid);
+    assert(ctx.device_palette.generation == 503); // LUT and generation value are kept
+
+    // Audio start and stops leave the baseline alone.
+    ctx.device_palette.ordering_valid = true;
+    assert(c64_stream_control_to(&ctx, "1.2.3.4", 64, true, 1, "dest"));
+    assert(ctx.device_palette.ordering_valid);
+    assert(c64_stream_control_to(&ctx, "1.2.3.4", 64, false, 0, "dest"));
+    assert(ctx.device_palette.ordering_valid);
+
+    // Without follow mode there is no baseline to reset.
+    ctx.follow_device_palette = false;
+    assert(c64_stream_control_to(&ctx, "1.2.3.4", 64, true, 0, "dest"));
+    assert(ctx.device_palette.ordering_valid);
+
+    // Legacy transport (no REST client) resets too: the start still reaches the device.
+    ctx.follow_device_palette = true;
+    ctx.rest_client = NULL;
+    assert(c64_stream_control_to(&ctx, "1.2.3.4", 64, true, 0, "dest"));
+    assert(!ctx.device_palette.ordering_valid);
+}
+
 TEST(device_palette_rejection_retries_without_palette)
 {
     reset_stubs();
     struct c64_source ctx;
-    memset(&ctx, 0, sizeof(ctx));
-    ctx.stream_control_transport = C64_STREAM_TRANSPORT_AUTO;
-    ctx.rest_client = kDummyClient;
-    ctx.follow_device_palette = true;
-    ctx.device_palette_request_supported = true;
+    init_follow_ctx(&ctx);
     g_rest.reject_palette = true;
     g_rest.start_ok = true;
 
@@ -468,6 +507,7 @@ int main(void)
     RUN_TEST(should_fallback_only_for_not_supported);
     RUN_TEST(rest_success_never_falls_back);
     RUN_TEST(device_palette_is_requested_only_for_video);
+    RUN_TEST(video_start_in_follow_mode_resets_palette_generation_baseline);
     RUN_TEST(device_palette_rejection_retries_without_palette);
     RUN_TEST(not_supported_404_demotes_permanently_and_falls_back);
     RUN_TEST(not_supported_501_demotes_with_expiry_and_falls_back);
